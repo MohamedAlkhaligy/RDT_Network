@@ -15,7 +15,8 @@ private:
 	enum states {SLOW_START, CONGESTION_AVOIDANCE, FAST_RECOVERY};
 
 	struct addrinfo addrCriteria;
-	struct addrinfo* servAddr;
+	const sockaddr* addr;
+	int addrlen;
 	SOCKET destinationSocket;
 	int initialPort = 1024;
 
@@ -45,19 +46,12 @@ public:
 		packets = std::vector<struct packet>(PACKETS);
 	}
 
-	int init();
 
-	SOCKET _accept(SOCKET s, sockaddr* addr, int* addrlen);
-
-	int _getaddrinfo(const char* IPAdress, const char* port);
-
-	SOCKET _socket();
-
-	int _bind(SOCKET s);
+	SOCKET _accept(SOCKET s);
 
 	int _listen();
 
-	int _connect(SOCKET s);
+	int _connect(SOCKET s, const sockaddr* _addr, int _addrlen);
 
 	int _send(SOCKET s, const char* data, int len);
 

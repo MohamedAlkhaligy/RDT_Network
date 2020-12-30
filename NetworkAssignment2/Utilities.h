@@ -17,7 +17,7 @@ static const int MAX_BUFFER = 4096;
 static const int MAX_DGRAM_PAYLOAD = 512;
 static const int INITIAL_THRESHOLD = 65536;
 static const int DATA_PACKET_SIZE = 524;
-static const int ACK_PACKET_SIZE = 8;
+static const int ACK_PACKET_SIZE = 12;
 static const int MAJOR = 2;
 static const int MINOR = 2;
 static const int SUCCESS = 0;
@@ -27,6 +27,7 @@ static const int MARGIN = 512;
 static const std::string CLIENT_DEFAULT_PATH = "client.in";
 static const std::string SERVER_DEFAULT_PATH = "server.in";
 static const std::string SERVER = "localhost";
+static const std::string SEPARATOR = "\r\n\r\n";
 
 // Data-only packets
 struct packet {
@@ -45,6 +46,7 @@ struct ack_packet {
 	uint16_t checksum;
 	uint16_t len;
 	uint32_t ackno;
+	SOCKET _sock;
 };
 
 class Utilities

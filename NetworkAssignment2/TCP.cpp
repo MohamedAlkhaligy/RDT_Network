@@ -1,37 +1,17 @@
 #include "TCP.h"
 
-int TCP::init() {
-	// Initialize WinSock
-	WSADATA data;
-	WORD version = MAKEWORD(MAJOR, MINOR);
-	int wsaResult = WSAStartup(version, &data);
-	if (wsaResult != SUCCESS) {
-		std::cerr << "Can't start WinSock, ERROR#" << wsaResult << std::endl;
-		return wsaResult;
+int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
+	// Connect to server.
+	addr = servAddr;
+	addrlen = servAddrLen;
+	if (connect(s, addr, addrlen) < 0) {
+		std::cout << "Error : Connect Failed" << std::endl;
+		return FAILURE;
 	}
 
-	memset(&addrCriteria, 0, sizeof(addrCriteria));
-	addrCriteria.ai_family = AF_UNSPEC;				// Any address family
-	addrCriteria.ai_socktype = SOCK_DGRAM;			// Only datagram sockets
-	addrCriteria.ai_flags = AI_PASSIVE;				// Accept on any address/port
-	addrCriteria.ai_protocol = IPPROTO_UDP;			// Only UDP protocol
-
-	return SUCCESS;
-}
-
-int TCP::_getaddrinfo(const char* IPAdress, const char* port) {
-	return getaddrinfo(IPAdress, port, &addrCriteria, &servAddr);
-}
-
-SOCKET TCP::_socket() {
-	return socket(servAddr->ai_family, servAddr->ai_socktype, servAddr->ai_protocol);
-}
-
-int TCP::_connect(SOCKET s) {
 	// Three-way Handshake, third one will be sent with data.
-	// Downgraded to two-way handshake because there's no time, and why not lol.
-	int success = 0;
-	sendto(s, buffer, 0, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+	// Downgraded to two-way handshake.
+	sendto(s, buffer, 0, 0);
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(s, &readfds);
@@ -40,52 +20,56 @@ int TCP::_connect(SOCKET s) {
 	tv.tv_sec = TIMEOUT_S;
 	tv.tv_usec = TIMEOUT_M;
 
+	int success = 0;
 	while (!success) {
 		if (select(s + 1, &readfds, NULL, NULL, &tv) == 0) {
-			sendto(s, buffer, 0, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+			sendto(s, buffer, 0, 0, addr, addrlen);
 			std::cout << "Handshake: timeout" << std::endl;
 			tv.tv_sec = TIMEOUT_S;
 			tv.tv_usec = TIMEOUT_M;
 		} else {
 			struct sockaddr_storage fromAddr;
 			socklen_t fromAddrLen = sizeof(fromAddr);
-			int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
+			int numBytes = recvfrom(s, buffer, sizeof(sockaddr_in), 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
 			if (numBytes < 0) {
 				std::cout << "Client: no connection" << std::endl;
 				return FAILURE;
 			}
 
 			// Assign new delegated server port.
+			std::cout << "Connection Established" << std::endl;
 			sockaddr_in sock;
 			memcpy(&sock, buffer, numBytes);
-			// servAddr->ai_addr = (struct sockaddr*) &sock;
-			// servAddr->ai_addrlen = sizeof(sock);
+			// addr = (struct sockaddr*) &sock;
+			// addrlen = sizeof(sock);
 			success = 1;
 		}
 	}
 	return SUCCESS;
 }
 
-SOCKET TCP::_accept(SOCKET s, sockaddr* addr, int* addrlen) {
-
+SOCKET TCP::_accept(SOCKET s) {
 	// Receive a connection from a new client.
 	struct sockaddr_storage fromAddr;
 	socklen_t fromAddrLen = sizeof(fromAddr);
-	int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
+	int numBytes = recvfrom(s, buffer, 0, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
 
+	// Save client address.
+	addr = (struct sockaddr*) &fromAddr;
+	addrlen = fromAddrLen;
+
+	// Delegate the new client to a new server socket.
 	SOCKET client = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
 	sockaddr_in newSock;
 	newSock.sin_addr.S_un.S_addr = INADDR_ANY;
 	newSock.sin_port = htons(initialPort);
 	newSock.sin_family = AF_INET;
-	while (bind(client, (struct sockaddr*)&newSock, sizeof(newSock)) == SOCKET_ERROR) {
+	/*while (bind(client, (struct sockaddr*)&newSock, sizeof(newSock)) == SOCKET_ERROR) {
 		newSock.sin_port = htons(initialPort++);
-	}
+	}*/
 
-	int success = 0;
-	memcpy(buffer, &newSock, sizeof(newSock));
-	sendto(s, buffer, sizeof(newSock), 0, (struct sockaddr*) &fromAddr, fromAddrLen);
+	memcpy(buffer, &newSock, sizeof(sockaddr_in));
+	sendto(s, buffer, sizeof(sockaddr_in), 0, addr, addrlen);
 	return client;
 }
 
@@ -124,8 +108,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	for (int i = base; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 		char t[MAX_BUFFER];
 		memcpy(t, &packets[i], DATA_PACKET_SIZE);
-		sendto(s, t, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
-		std::cout << "Sending: Pakcet " << packets[i].seqno << std::endl;
+		sendto(s, t, DATA_PACKET_SIZE, 0, addr, addrlen);
+		std::cout << "Sending: Packet " << packets[i].seqno << std::endl;
 		size += packets[i].len;
 	}
 
@@ -146,10 +130,12 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 			cwnd = 1;
 			dupACKcount = 0;
 			// Retransmit missing segments (Go-Back-N)
+			std::cout << "Timeout have occured:" << std::endl;
 			for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
 				char c[DATA_PACKET_SIZE];
 				memcpy(c, &packets[i], DATA_PACKET_SIZE);
-				sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+				sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
+				std::cout << "Resending: Packet " << packets[i].seqno << std::endl;
 				size += packets[i].len;
 			}
 			switch (currentState) {
@@ -159,10 +145,10 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 			}
 			tv.tv_sec = TIMEOUT_S;
 			tv.tv_usec = TIMEOUT_M;
-		} 
-		// New Ack, or duplicate ack.
-		else {
-			int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, nullptr, nullptr);
+		} else {
+			struct sockaddr_storage fromAddr;
+			socklen_t fromAddrLen = sizeof(fromAddr);
+			int numBytes = recvfrom(s, buffer, DATA_PACKET_SIZE, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
 			if (numBytes < 0) {
 				std::cout << "Client: no connection" << std::endl;
 				return FAILURE;
@@ -181,7 +167,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 					for (int i = lastIndexSent; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
-						sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
+						std::cout << "Sending: Packet " << packets[i].seqno << std::endl;
 						size += packets[i].len;
 					}
 					if (cwnd >= ssthread) currentState = CONGESTION_AVOIDANCE;
@@ -198,7 +185,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 					for (int i = lastIndexSent; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
-						sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
+						std::cout << "Sending: Packet " << packets[i].seqno << std::endl;
 						size += packets[i].len;
 					}
 					break;
@@ -221,7 +209,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 						for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
 							char c[DATA_PACKET_SIZE];
 							memcpy(c, &packets[i], DATA_PACKET_SIZE);
-							sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+							sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
+							std::cout << "Resending: Packet " << packets[i].seqno << std::endl;
 							size += packets[i].len;
 							currentState = FAST_RECOVERY;
 							dupACKcount = 0;
@@ -237,7 +226,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 						for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
 							char c[DATA_PACKET_SIZE];
 							memcpy(c, &packets[i], DATA_PACKET_SIZE);
-							sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+							sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
+							std::cout << "Resending: Packet " << packets[i].seqno << std::endl;
 							size += packets[i].len;
 							currentState = FAST_RECOVERY;
 							dupACKcount = 0;
@@ -250,7 +240,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 					for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
-						sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
+						std::cout << "Resending: Packet " << packets[i].seqno << std::endl;
 						size += packets[i].len;
 					}
 					break;
@@ -264,10 +255,6 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	return size;
 }
 
-int TCP::_bind(SOCKET s) {
-	return bind(s, servAddr->ai_addr, servAddr->ai_addrlen);
-}
-
 int TCP::_listen() {
 	return 0;
 }
@@ -278,26 +265,25 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 	int numBytes = 0;
 	struct packet pk = {0, 0, 0, false};
 	while (true) {
-		int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
+		numBytes = recvfrom(s, buffer, DATA_PACKET_SIZE, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
+		std::cout << "Receivng: Packet " << pk.seqno << std::endl;
 		memcpy(&pk, buffer, numBytes);
-		std::cout << "Receivng: Pakcet " << pk.seqno << std::endl;
 		if (pk.seqno == expectedseqnum) {
 			// Deliver data, and Send ack.
 			memcpy(buff, &pk.data, pk.len);
-			ack = { 0, 0, expectedseqnum };
+			ack = { 0, 0, expectedseqnum, s };
 			memcpy(buffer, &ack, ACK_PACKET_SIZE);
-			sendto(s, buffer, ACK_PACKET_SIZE, 0, (struct sockaddr*) &fromAddr, fromAddrLen);
+			sendto(s, buffer, ACK_PACKET_SIZE, 0, addr, addrlen);
 			expectedseqnum++;
 			// Return recevied data.
 			break;
 		} else {
 			// Send duplicate ack.
 			memcpy(buffer, &ack, ACK_PACKET_SIZE);
-			sendto(s, buffer, MAX_BUFFER, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+			sendto(s, buffer, MAX_BUFFER, 0, addr, addrlen);
 		}
-		std::cout << (int)pk.len << std::endl;
-		return pk.len;
 	}
+	return (int)pk.len;
 }
 
 void TCP::_closesocket(SOCKET s) {
