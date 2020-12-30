@@ -29,6 +29,7 @@ SOCKET TCP::_socket() {
 
 int TCP::_connect(SOCKET s) {
 	// Three-way Handshake, third one will be sent with data.
+	// Downgraded to two-way handshake because there's no time, and why not lol.
 	int success = 0;
 	sendto(s, buffer, 0, 0, servAddr->ai_addr, servAddr->ai_addrlen);
 	fd_set readfds;
@@ -57,8 +58,8 @@ int TCP::_connect(SOCKET s) {
 			// Assign new delegated server port.
 			sockaddr_in sock;
 			memcpy(&sock, buffer, numBytes);
-			servAddr->ai_addr = (struct sockaddr*) &sock;
-			servAddr->ai_addrlen = sizeof(sock);
+			// servAddr->ai_addr = (struct sockaddr*) &sock;
+			// servAddr->ai_addrlen = sizeof(sock);
 			success = 1;
 		}
 	}
@@ -82,70 +83,32 @@ SOCKET TCP::_accept(SOCKET s, sockaddr* addr, int* addrlen) {
 		newSock.sin_port = htons(initialPort++);
 	}
 
-	// 
 	int success = 0;
 	memcpy(buffer, &newSock, sizeof(newSock));
 	sendto(s, buffer, sizeof(newSock), 0, (struct sockaddr*) &fromAddr, fromAddrLen);
-
-	fd_set readfds;
-	FD_ZERO(&readfds);
-	FD_SET(s, &readfds);
-	struct timeval tv;
-	tv.tv_sec = TIMEOUT_S;
-	tv.tv_usec = TIMEOUT_M;
-
-	while (!success) {
-		if (select(s + 1, &readfds, NULL, NULL, &tv) == 0) {
-			sendto(s, buffer, 0, 0, (struct sockaddr*)&fromAddr, fromAddrLen);
-			std::cout << "Handshake: timeout" << std::endl;
-			tv.tv_sec = TIMEOUT_S;
-			tv.tv_usec = TIMEOUT_M;
-		} else {
-			struct sockaddr_storage fromAddr;
-			socklen_t fromAddrLen = sizeof(fromAddr);
-			int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
-			if (numBytes < 0) {
-				std::cout << "Client: no connection" << std::endl;
-				return FAILURE;
-			}
-			memcpy(buffer, servAddr, numBytes);
-			success = 1;
-		}
-	}
-
-	
-
 	return client;
 }
 
 
 int TCP::_send(SOCKET s, const char* data, int len) {
-	int size = 0;
 	
 	if (len / MAX_DGRAM_PAYLOAD > packets.size()) {
-		packets.resize(len / MAX_DGRAM_PAYLOAD + 1);
+		packets.resize(len / MAX_DGRAM_PAYLOAD + MARGIN);
 	}
-	
-	nextseqnum = 0;
-	dupACKcount = 0;
-	base = 0;
-	lastPacketIndex = 0;
 
-	lastPacketIndex = 0;
-	//char c[MAX_DGRAM_PAYLOAD];
-	//if (!isConnectionEstablishedS) {
-	//	// Third-handshake message;
-	//	struct packet pk = { 0, 0, nextseqnum++, *c};
-	//	lastPacketIndex++;
-	//	isConnectionEstablishedS = true;
-	//}
+	nextseqnum = 1;
+	dupACKcount = 0;
+	base = 1;
+	lastPacketIndex = 1;
+	int lastIndexSent = 1;
+	int size = 0;
 
 	// Split data into packets
 	// Bonus: Edit checksum later.
 	int index = 0;
 	while (len > 0) {
 		struct packet pk;
-		pk = { 0, min(MAX_DGRAM_PAYLOAD, len), nextseqnum };
+		pk = { 0, (uint16_t) min(MAX_DGRAM_PAYLOAD, len), nextseqnum, false};
 		memcpy(pk.data, data + index, min(MAX_DGRAM_PAYLOAD, len));
 		packets[lastPacketIndex] = pk;
 		lastPacketIndex++;
@@ -154,57 +117,148 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 		index += MAX_DGRAM_PAYLOAD;
 	}
 
+	// Final packet to be sent.
+	packets[lastPacketIndex] = { 0, 0, nextseqnum++, true};
+
 	// Send the initial packets in the congestion window.
-	for (int i = 0; i < cwnd && i < lastPacketIndex; i++) {
-		char c[DATA_PACKET_SIZE];
-		memcpy(c, &packets[i], DATA_PACKET_SIZE);
-		sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+	for (int i = base; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+		char t[MAX_BUFFER];
+		memcpy(t, &packets[i], DATA_PACKET_SIZE);
+		sendto(s, t, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+		std::cout << "Sending: Pakcet " << packets[i].seqno << std::endl;
 		size += packets[i].len;
 	}
 
 	// FSM of TCP congestion control;
-	int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, nullptr, nullptr);
-	struct packet temp;
-	memcpy(&temp, buffer, numBytes);
 
+	fd_set readfds;
+	FD_ZERO(&readfds);
+	FD_SET(s, &readfds);
+	struct timeval tv;
+	tv.tv_sec = TIMEOUT_S;
+	tv.tv_usec = TIMEOUT_M;
+
+	int counter = 0;
 	while (base < lastPacketIndex) {
-		fd_set readfds;
-		FD_ZERO(&readfds);
-		FD_SET(s, &readfds);
-		struct timeval tv;
-		tv.tv_sec = TIMEOUT_S;
-		tv.tv_usec = TIMEOUT_M;
+		// Timeout
+		if (select(s + 1, &readfds, NULL, NULL, &tv) == 0) {
+			ssthread = cwnd / 2;
+			cwnd = 1;
+			dupACKcount = 0;
+			// Retransmit missing segments (Go-Back-N)
+			for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
+				char c[DATA_PACKET_SIZE];
+				memcpy(c, &packets[i], DATA_PACKET_SIZE);
+				sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+				size += packets[i].len;
+			}
+			switch (currentState) {
+				case SLOW_START: break;
+				case CONGESTION_AVOIDANCE: currentState = SLOW_START; break;
+				case FAST_RECOVERY:	currentState = SLOW_START; break;
+			}
+			tv.tv_sec = TIMEOUT_S;
+			tv.tv_usec = TIMEOUT_M;
+		} 
+		// New Ack, or duplicate ack.
+		else {
+			int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, nullptr, nullptr);
+			if (numBytes < 0) {
+				std::cout << "Client: no connection" << std::endl;
+				return FAILURE;
+			}
+			// check whether duplicate or ack.
+			struct ack_packet temp;
+			memcpy(&temp, buffer, ACK_PACKET_SIZE);
 
-		int success = 0;
-		while (!success) {
-			if (select(s + 1, &readfds, NULL, NULL, &tv) == 0) {
-				// Timeout
-				sendto(s, buffer, 0, 0, servAddr->ai_addr, servAddr->ai_addrlen);
-				std::cout << "Handshake: timeout" << std::endl;
-				tv.tv_sec = TIMEOUT_S;
-				tv.tv_usec = TIMEOUT_M;
-			} else {
-				// New Ack, or duplicate ack.
-				int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, nullptr, nullptr);
-				if (numBytes < 0) {
-					std::cout << "Client: no connection" << std::endl;
-					return FAILURE;
-				}
+			// new ACK
+			if (temp.ackno == base) {
+				dupACKcount = 0;
+				base++;
 				switch (currentState) {
-					case SLOW_START: {
-
-						break;
+				case SLOW_START: {
+					cwnd++;
+					for (int i = lastIndexSent; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+						char c[DATA_PACKET_SIZE];
+						memcpy(c, &packets[i], DATA_PACKET_SIZE);
+						sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+						size += packets[i].len;
 					}
-					case CONGESTION_AVOIDANCE: {
-
-						break;
+					if (cwnd >= ssthread) currentState = CONGESTION_AVOIDANCE;
+					break;
+				}
+				case CONGESTION_AVOIDANCE: {
+					counter++;
+					if (counter == cwnd) {
+						cwnd++;
+						counter = 0;
+					} else {
+						counter++;
 					}
-					case FAST_RECOVERY: {
-
-						break;
+					for (int i = lastIndexSent; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+						char c[DATA_PACKET_SIZE];
+						memcpy(c, &packets[i], DATA_PACKET_SIZE);
+						sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+						size += packets[i].len;
 					}
+					break;
+				} 
+				case FAST_RECOVERY: {
+					cwnd = ssthread;
+					currentState = CONGESTION_AVOIDANCE;
+					break;
+				}
+				}
+			} 
+			// Duplicate ack
+			else if (temp.ackno < base) {
+				switch (currentState) {
+				case SLOW_START: {
+					dupACKcount++;
+					if (dupACKcount == TRIPLET) {
+						ssthread = cwnd / 2;
+						cwnd = ssthread + 3;
+						for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
+							char c[DATA_PACKET_SIZE];
+							memcpy(c, &packets[i], DATA_PACKET_SIZE);
+							sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+							size += packets[i].len;
+							currentState = FAST_RECOVERY;
+							dupACKcount = 0;
+						}
+					}
+					break;
+				}
+				case CONGESTION_AVOIDANCE: {
+					dupACKcount++;
+					if (dupACKcount == TRIPLET) {
+						ssthread = cwnd / 2;
+						cwnd = ssthread + 3;
+						for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
+							char c[DATA_PACKET_SIZE];
+							memcpy(c, &packets[i], DATA_PACKET_SIZE);
+							sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+							size += packets[i].len;
+							currentState = FAST_RECOVERY;
+							dupACKcount = 0;
+						}
+					}
+					break;
+				} 
+				case FAST_RECOVERY: {
+					cwnd += 1;
+					for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+						char c[DATA_PACKET_SIZE];
+						memcpy(c, &packets[i], DATA_PACKET_SIZE);
+						sendto(s, c, DATA_PACKET_SIZE, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+						size += packets[i].len;
+					}
+					break;
+				}
 				}
 			}
+
+			
 		}
 	}
 	return size;
@@ -218,27 +272,30 @@ int TCP::_listen() {
 	return 0;
 }
 
-int TCP::_recv(SOCKET s, const char* buff, int len) {
+int TCP::_recv(SOCKET s, char* buff, int len) {
 	struct sockaddr_storage fromAddr;
 	socklen_t fromAddrLen = sizeof(fromAddr);
 	int numBytes = 0;
-	struct packet pk = {0, 0, -1};
+	struct packet pk = {0, 0, 0, false};
 	while (true) {
-		int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, (struct sockaddr*)&fromAddr, &fromAddrLen);
-		memcpy(&pk, buffer, DATA_PACKET_SIZE);
+		int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
+		memcpy(&pk, buffer, numBytes);
+		std::cout << "Receivng: Pakcet " << pk.seqno << std::endl;
 		if (pk.seqno == expectedseqnum) {
-			// Send ack.
-			memcpy(&buff, pk.data, pk.len);
-			pk = { 0, 0, expectedseqnum };
-			memcpy(buffer, &pk, ACK_PACKET_SIZE);
-			sendto(s, buffer, MAX_BUFFER, 0, servAddr->ai_addr, servAddr->ai_addrlen);
+			// Deliver data, and Send ack.
+			memcpy(buff, &pk.data, pk.len);
+			ack = { 0, 0, expectedseqnum };
+			memcpy(buffer, &ack, ACK_PACKET_SIZE);
+			sendto(s, buffer, ACK_PACKET_SIZE, 0, (struct sockaddr*) &fromAddr, fromAddrLen);
 			expectedseqnum++;
 			// Return recevied data.
+			break;
 		} else {
 			// Send duplicate ack.
-			memcpy(buffer, &pk, ACK_PACKET_SIZE);
+			memcpy(buffer, &ack, ACK_PACKET_SIZE);
 			sendto(s, buffer, MAX_BUFFER, 0, servAddr->ai_addr, servAddr->ai_addrlen);
 		}
+		std::cout << (int)pk.len << std::endl;
 		return pk.len;
 	}
 }

@@ -1,6 +1,6 @@
 #include "Client.h"
 
-#define CLIENT "client\\"
+#define CLIENT_FOLDER "client\\"
 
 int Client::init(TCP* tcp, const char* server, const char* serverPort) {
 
@@ -59,7 +59,7 @@ int Client::execute() {
 		tcp->_send(socketToServer, filename.c_str(), filename.size());
 
 		// Receive the requested file from the server.
-		std::string clientpath = CLIENT + filename;
+		std::string clientpath = CLIENT_FOLDER + filename;
 		FILE* file = NULL;
 		if (!fopen_s(&file, clientpath.c_str(), "wb") && file != NULL) {
 			int currentFileSize = 0, numBytesRcvd = 1;
@@ -70,8 +70,7 @@ int Client::execute() {
 					std::cerr << "Client: Receiving file has failed" << std::endl;
 					return FAILURE;
 				} else if (numBytesRcvd == 0) {
-					std::cerr << "Client: Connection Closed" << std::endl;
-					return FAILURE;
+					break;
 				} else {
 					fwrite(buffer, numBytesRcvd, 1, file);
 				}

@@ -16,13 +16,14 @@
 static const int MAX_BUFFER = 4096;
 static const int MAX_DGRAM_PAYLOAD = 512;
 static const int INITIAL_THRESHOLD = 65536;
-static const int DATA_PACKET_SIZE = 528;
-static const int ACK_PACKET_SIZE = 12;
+static const int DATA_PACKET_SIZE = 524;
+static const int ACK_PACKET_SIZE = 8;
 static const int MAJOR = 2;
 static const int MINOR = 2;
 static const int SUCCESS = 0;
 static const int FAILURE = 1;
 static const int PACKETS = 8192;
+static const int MARGIN = 512;
 static const std::string CLIENT_DEFAULT_PATH = "client.in";
 static const std::string SERVER_DEFAULT_PATH = "server.in";
 static const std::string SERVER = "localhost";
@@ -30,9 +31,9 @@ static const std::string SERVER = "localhost";
 // Data-only packets
 struct packet {
 	// Header
-	int checksum;
-	int len;
-	int seqno;
+	uint16_t checksum;
+	uint16_t len;
+	uint32_t seqno;
 	bool isFinal;
 
 	// Data (Payload)
@@ -41,9 +42,9 @@ struct packet {
 
 // Ack-only packets (only 8 bytes)
 struct ack_packet {
-	int checksum;
-	int len;
-	int ackno;
+	uint16_t checksum;
+	uint16_t len;
+	uint32_t ackno;
 };
 
 class Utilities

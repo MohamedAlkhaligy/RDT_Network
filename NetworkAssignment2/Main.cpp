@@ -9,6 +9,7 @@ int main()
 {
 
     std::cout << sizeof(struct packet) << std::endl;
+    std::cout << sizeof(struct ack_packet) << std::endl;
     std::string host;
     getline(std::cin, host);
 

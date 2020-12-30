@@ -4,8 +4,9 @@
 
 #include "Utilities.h"
 
-static const double TIMEOUT_S = 30.0;
+static const double TIMEOUT_S = 90.0;
 static const double TIMEOUT_M = 0;
+static const int TRIPLET = 3;
 
 class TCP
 {
@@ -20,17 +21,18 @@ private:
 
 	states currentState = SLOW_START;
 
-	int ssthread = INITIAL_THRESHOLD / DATA_PACKET_SIZE;
-	int cwnd = 1;
-	int nextseqnum = 0;
+	uint32_t ssthread = INITIAL_THRESHOLD / DATA_PACKET_SIZE;
+	uint32_t cwnd = 1;
+	uint32_t nextseqnum = 1;
 	int dupACKcount = 0;
-	int base = 0;
-	int lastPacketIndex = 0;
+	int base = 1;
+	int lastPacketIndex = 1;
 	bool isConnectionEstablishedS = false;
 	bool isConnectionEstablishedR = false;
+	struct ack_packet ack = { 0, 0, 0 };
 	char buffer[MAX_BUFFER];
 
-	int expectedseqnum = 0;
+	uint32_t expectedseqnum = 1;
 
 	void rdt_send();
 
@@ -59,7 +61,7 @@ public:
 
 	int _send(SOCKET s, const char* data, int len);
 
-	int _recv(SOCKET s, const char* buffer, int len);
+	int _recv(SOCKET s, char* buffer, int len);
 
 	// Close TCP connection.
 	void _closesocket(SOCKET s);
