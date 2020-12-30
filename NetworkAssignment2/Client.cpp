@@ -29,19 +29,11 @@ int Client::init(TCP* tcp, const char* server, const char* serverPort) {
 
 	// Create a socket
 	socketToServer = socket(servAddr->ai_family, servAddr->ai_socktype, servAddr->ai_protocol);
+	std::cout << "Socket: " << socketToServer << std::endl;
 	if (socketToServer == INVALID_SOCKET) {
 		std::cerr << "Can't create socket, ERROR#" << WSAGetLastError() << std::endl;
 		WSACleanup();
 		return SOCKET_ERROR;
-	}
-
-	// try to find a port, and bind the IP address and port to a socket
-	sockaddr_in clieAddr;
-	clieAddr.sin_addr.S_un.S_addr = INADDR_ANY;
-	clieAddr.sin_port = htons(initialPort);
-	clieAddr.sin_family = AF_INET;
-	while (bind(socketToServer, (struct sockaddr*) &clieAddr, sizeof(clieAddr)) == SOCKET_ERROR) {
-		clieAddr.sin_port = htons(initialPort++);
 	}
 
 	// Connect to the server

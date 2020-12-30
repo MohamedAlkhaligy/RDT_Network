@@ -30,6 +30,7 @@ int Server::init(TCP* tcp, const char* server, const char* port) {
 
 	// Create a socket
 	mySocket = socket(servAddr->ai_family, servAddr->ai_socktype, servAddr->ai_protocol);
+	std::cout << "Socket: " << mySocket << std::endl;
 	if (mySocket == INVALID_SOCKET) {
 		std::cerr << "Can't create socket, ERROR#" << WSAGetLastError() << std::endl;
 		WSACleanup();

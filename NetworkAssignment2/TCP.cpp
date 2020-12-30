@@ -2,16 +2,14 @@
 
 int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 	// Connect to server.
-	addr = servAddr;
-	addrlen = servAddrLen;
-	if (connect(s, addr, addrlen) < 0) {
+	if (connect(s, servAddr, servAddrLen) < 0) {
 		std::cout << "Error : Connect Failed" << std::endl;
 		return FAILURE;
 	}
 
 	// Three-way Handshake, third one will be sent with data.
 	// Downgraded to two-way handshake.
-	sendto(s, buffer, 0, 0);
+	sendto(s, buffer, 0, 0, servAddr, servAddrLen);
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(s, &readfds);
@@ -28,9 +26,9 @@ int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 			tv.tv_sec = TIMEOUT_S;
 			tv.tv_usec = TIMEOUT_M;
 		} else {
-			struct sockaddr_storage fromAddr;
-			socklen_t fromAddrLen = sizeof(fromAddr);
-			int numBytes = recvfrom(s, buffer, sizeof(sockaddr_in), 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
+			sockaddr fromAddr ;
+			int fromAddrLen = sizeof(fromAddr);
+			int numBytes = recvfrom(s, buffer, sizeof(sockaddr_in), 0, &fromAddr, &fromAddrLen);
 			if (numBytes < 0) {
 				std::cout << "Client: no connection" << std::endl;
 				return FAILURE;
@@ -42,6 +40,8 @@ int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 			memcpy(&sock, buffer, numBytes);
 			// addr = (struct sockaddr*) &sock;
 			// addrlen = sizeof(sock);
+			addr = new sockaddr(fromAddr);
+			addrlen = fromAddrLen;
 			success = 1;
 		}
 	}
@@ -50,12 +50,12 @@ int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 
 SOCKET TCP::_accept(SOCKET s) {
 	// Receive a connection from a new client.
-	struct sockaddr_storage fromAddr;
-	socklen_t fromAddrLen = sizeof(fromAddr);
+	sockaddr fromAddr;
+	int fromAddrLen = sizeof(fromAddr);
 	int numBytes = recvfrom(s, buffer, 0, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
 
 	// Save client address.
-	addr = (struct sockaddr*) &fromAddr;
+	addr = new sockaddr(fromAddr);
 	addrlen = fromAddrLen;
 
 	// Delegate the new client to a new server socket.
@@ -102,7 +102,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	}
 
 	// Final packet to be sent.
-	packets[lastPacketIndex] = { 0, 0, nextseqnum++, true};
+	packets[lastPacketIndex - 1].isFinal = true;
 
 	// Send the initial packets in the congestion window.
 	for (int i = base; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
@@ -114,18 +114,17 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	}
 
 	// FSM of TCP congestion control;
-
 	fd_set readfds;
-	FD_ZERO(&readfds);
-	FD_SET(s, &readfds);
-	struct timeval tv;
-	tv.tv_sec = TIMEOUT_S;
-	tv.tv_usec = TIMEOUT_M;
+	struct timeval timeout;
+	timeout.tv_sec = TIMEOUT_S;
+	timeout.tv_usec = TIMEOUT_M;
 
 	int counter = 0;
 	while (base < lastPacketIndex) {
+		FD_ZERO(&readfds);
+		FD_SET(s, &readfds);
 		// Timeout
-		if (select(s + 1, &readfds, NULL, NULL, &tv) == 0) {
+		if (select(s + 1, &readfds, NULL, NULL, &timeout) == 0) {
 			ssthread = cwnd / 2;
 			cwnd = 1;
 			dupACKcount = 0;
@@ -143,8 +142,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 				case CONGESTION_AVOIDANCE: currentState = SLOW_START; break;
 				case FAST_RECOVERY:	currentState = SLOW_START; break;
 			}
-			tv.tv_sec = TIMEOUT_S;
-			tv.tv_usec = TIMEOUT_M;
+			timeout.tv_sec = TIMEOUT_S;
+			timeout.tv_usec = TIMEOUT_M;
 		} else {
 			struct sockaddr_storage fromAddr;
 			socklen_t fromAddrLen = sizeof(fromAddr);
@@ -260,14 +259,12 @@ int TCP::_listen() {
 }
 
 int TCP::_recv(SOCKET s, char* buff, int len) {
-	struct sockaddr_storage fromAddr;
-	socklen_t fromAddrLen = sizeof(fromAddr);
 	int numBytes = 0;
 	struct packet pk = {0, 0, 0, false};
 	while (true) {
-		numBytes = recvfrom(s, buffer, DATA_PACKET_SIZE, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
-		std::cout << "Receivng: Packet " << pk.seqno << std::endl;
+		numBytes = recvfrom(s, buffer, DATA_PACKET_SIZE, 0, NULL, NULL);
 		memcpy(&pk, buffer, numBytes);
+		std::cout << "Receivng: Packet " << pk.seqno << std::endl;
 		if (pk.seqno == expectedseqnum) {
 			// Deliver data, and Send ack.
 			memcpy(buff, &pk.data, pk.len);
@@ -276,6 +273,8 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 			sendto(s, buffer, ACK_PACKET_SIZE, 0, addr, addrlen);
 			expectedseqnum++;
 			// Return recevied data.
+			
+			if (pk.isFinal) expectedseqnum = 1;
 			break;
 		} else {
 			// Send duplicate ack.

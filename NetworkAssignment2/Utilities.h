@@ -27,7 +27,7 @@ static const int MARGIN = 512;
 static const std::string CLIENT_DEFAULT_PATH = "client.in";
 static const std::string SERVER_DEFAULT_PATH = "server.in";
 static const std::string SERVER = "localhost";
-static const std::string SEPARATOR = "\r\n\r\n";
+static const std::string SEPARATOR = "\r\n.\r\n";
 
 // Data-only packets
 struct packet {

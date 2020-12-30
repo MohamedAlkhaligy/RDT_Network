@@ -1,0 +1,119 @@
+// Experimental.cpp : This file contains the 'main' function. Program execution begins and ends there.
+//
+
+#include <iostream>
+#include <fstream>
+#include <string>
+#define _CRT_SECURE_NO_DEPRECATE
+
+
+
+//
+//std::ifstream file;
+//std::string inputFile = "image.jpg";
+//std::string outputFile = "image2.jpg";
+//file.open(inputFile, std::ios::in | std::ios::binary | std::ios::ate);
+//int size = (int)file.tellg();
+//file.close();
+//std::cout << size << std::endl;
+//
+//FILE* input;
+//errno_t err1;
+//errno_t err2;
+//err1 = fopen_s(&input, inputFile.c_str(), "rb");
+//FILE* output;
+//err2 = fopen_s(&output, outputFile.c_str(), "wb");
+//const int MAX = 4096;
+//
+//while (size > 0)
+//{
+//    char buffer1[MAX];
+//    char buffer2[MAX];
+//
+//    if (size >= MAX)
+//    {
+//        err1 = fread_s(buffer1, MAX, MAX, 1, input);
+//        fwrite(buffer1, MAX, 1, output);
+//
+//
+//        //for (int i = 0; i < MAX; i++) std::cout << buffer1[i];
+//        //std::cout << std::endl;
+//        //for (int i = 0; i < MAX; i++) std::cout << buffer1[i];
+//        //std::cout << std::endl;
+//        //break;
+//    }
+//    else
+//    {
+//        err1 = fread_s(buffer1, MAX, size, 1, input);
+//        buffer1[size] = '\0';
+//
+//        buffer1[size] = '\0';
+//        fwrite(buffer1, size, 1, output);
+//
+//        /*for (int i = 0; i < size; i++) std::cout << buffer1[i];
+//        std::cout << std::endl;
+//        for (int i = 0; i < size; i++) std::cout << buffer1[i];
+//        std::cout << std::endl;*/
+//    }
+//    size -= MAX;
+//}
+//
+//fclose(input);
+//fclose(output);
+
+
+int main()
+{
+    try {
+        // image.jpg image2.jpg
+        // Text.txt Text2.txt
+        //std::string inputFile = "Text.txt";
+        //std::string outputFile = "Text2.txt";
+        std::string inputFile = "image.jpg";
+        std::string outputFile = "image2.jpg";
+        std::string  request = "POST /somedir/page.html HTTP/1.1\r\n\r\n";
+        std::ifstream ifs(inputFile, std::ios::in | std::ios::binary);
+        std::string content((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+        request = content;
+
+        //std::cout << content.size() << std::endl;
+        int numBytes = request.size();
+        std::cout << numBytes << std::endl;
+        const int MAX = 4096;
+
+
+        std::string requestReceived;
+        requestReceived.resize(numBytes);
+
+        int position = 0;
+        while (numBytes > 0) {
+            char buffer[MAX * 2];
+            if (numBytes >= MAX) {
+                request.copy(buffer, MAX, position);
+
+                requestReceived.replace(position, MAX, buffer, MAX);
+            } else {
+                request.copy(buffer, numBytes, position);
+
+                requestReceived.replace(position, numBytes, buffer, numBytes);
+
+                /*for (int i = position; i < numBytes + 1; i++) std::cout << buffer[i];
+                std::cout << std::endl;*/
+
+            }
+            numBytes -= MAX;
+            position += MAX;
+        }
+
+        ////std::cout << request << std::endl;
+        //std::cout << content.size() << std::endl;
+
+        std::ofstream out(outputFile, std::ios::out | std::ios::binary);
+        out << requestReceived;
+
+
+    } catch (const std::ifstream::failure& e) {
+        std::cout << "Exception opening/reading file" << std::endl;
+    }
+    
+}
