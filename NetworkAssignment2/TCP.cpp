@@ -80,10 +80,9 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 		packets.resize(len / MAX_DGRAM_PAYLOAD + MARGIN);
 	}
 
-	nextseqnum = 1;
 	dupACKcount = 0;
-	base = 1;
 	lastPacketIndex = 1;
+	int localBase = 1;
 	int lastIndexSent = 1;
 	int size = 0;
 
@@ -101,11 +100,8 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 		index += MAX_DGRAM_PAYLOAD;
 	}
 
-	// Final packet to be sent.
-	packets[lastPacketIndex - 1].isFinal = true;
-
 	// Send the initial packets in the congestion window.
-	for (int i = base; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+	for (int i = localBase; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 		char t[MAX_BUFFER];
 		memcpy(t, &packets[i], DATA_PACKET_SIZE);
 		sendto(s, t, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -120,7 +116,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	timeout.tv_usec = TIMEOUT_M;
 
 	int counter = 0;
-	while (base < lastPacketIndex) {
+	while (localBase < lastPacketIndex) {
 		FD_ZERO(&readfds);
 		FD_SET(s, &readfds);
 		// Timeout
@@ -130,7 +126,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 			dupACKcount = 0;
 			// Retransmit missing segments (Go-Back-N)
 			std::cout << "Timeout have occured:" << std::endl;
-			for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
+			for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++) {
 				char c[DATA_PACKET_SIZE];
 				memcpy(c, &packets[i], DATA_PACKET_SIZE);
 				sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -160,10 +156,11 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 			if (temp.ackno == base) {
 				dupACKcount = 0;
 				base++;
+				localBase++;
 				switch (currentState) {
 				case SLOW_START: {
 					cwnd++;
-					for (int i = lastIndexSent; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+					for (int i = lastIndexSent; i <= localBase + cwnd - 1 && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
 						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -181,7 +178,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 					} else {
 						counter++;
 					}
-					for (int i = lastIndexSent; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+					for (int i = lastIndexSent; i <= localBase + cwnd - 1 && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
 						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -199,13 +196,14 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 			} 
 			// Duplicate ack
 			else if (temp.ackno < base) {
+				std::cout << "Dropping: Packet " << temp.ackno << std::endl;
 				switch (currentState) {
 				case SLOW_START: {
 					dupACKcount++;
 					if (dupACKcount == TRIPLET) {
 						ssthread = cwnd / 2;
 						cwnd = ssthread + 3;
-						for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
+						for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++) {
 							char c[DATA_PACKET_SIZE];
 							memcpy(c, &packets[i], DATA_PACKET_SIZE);
 							sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -222,7 +220,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 					if (dupACKcount == TRIPLET) {
 						ssthread = cwnd / 2;
 						cwnd = ssthread + 3;
-						for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++) {
+						for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++) {
 							char c[DATA_PACKET_SIZE];
 							memcpy(c, &packets[i], DATA_PACKET_SIZE);
 							sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -236,7 +234,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 				} 
 				case FAST_RECOVERY: {
 					cwnd += 1;
-					for (int i = base; i <= base + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+					for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
 						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -273,8 +271,6 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 			sendto(s, buffer, ACK_PACKET_SIZE, 0, addr, addrlen);
 			expectedseqnum++;
 			// Return recevied data.
-			
-			if (pk.isFinal) expectedseqnum = 1;
 			break;
 		} else {
 			// Send duplicate ack.

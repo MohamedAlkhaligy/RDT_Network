@@ -13,7 +13,7 @@
 #include <chrono>
 #include <thread>
 
-static const int MAX_BUFFER = 4096;
+static const int MAX_BUFFER = 8192;
 static const int MAX_DGRAM_PAYLOAD = 512;
 static const int INITIAL_THRESHOLD = 65536;
 static const int DATA_PACKET_SIZE = 524;

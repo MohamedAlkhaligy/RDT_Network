@@ -22,7 +22,8 @@ private:
 
 	states currentState = SLOW_START;
 
-	uint32_t ssthread = INITIAL_THRESHOLD / DATA_PACKET_SIZE;
+	// uint32_t ssthread = INITIAL_THRESHOLD / DATA_PACKET_SIZE;
+	uint32_t ssthread = 32;
 	uint32_t cwnd = 1;
 	uint32_t nextseqnum = 1;
 	int dupACKcount = 0;
