@@ -2,6 +2,7 @@
 
 // #include "ClientsHandler.h"
 #include "Utilities.h"
+#include "ClientHandler.h"
 #include "TCP.h"
 #include <list>
 #include <thread>
@@ -13,7 +14,6 @@
 class Server
 {
 private:
-	char buffer[MAX_BUFFER];
 	SOCKET mySocket;
 	double timeout; // in seconds
 

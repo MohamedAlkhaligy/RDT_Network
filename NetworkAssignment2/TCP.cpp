@@ -1,15 +1,9 @@
 #include "TCP.h"
 
+// Client connecting to server.
 int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
-	// Connect to server.
-	if (connect(s, servAddr, servAddrLen) < 0) {
-		std::cout << "Error : Connect Failed" << std::endl;
-		return FAILURE;
-	}
-
-	// Three-way Handshake, third one will be sent with data.
-	// Downgraded to two-way handshake.
-	sendto(s, buffer, 0, 0, servAddr, servAddrLen);
+	// Two-way handshake.
+	sendto(s, NULL, 0, 0, servAddr, servAddrLen);
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(s, &readfds);
@@ -26,9 +20,9 @@ int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 			tv.tv_sec = TIMEOUT_S;
 			tv.tv_usec = TIMEOUT_M;
 		} else {
-			sockaddr fromAddr ;
+			sockaddr fromAddr;
 			int fromAddrLen = sizeof(fromAddr);
-			int numBytes = recvfrom(s, buffer, sizeof(sockaddr_in), 0, &fromAddr, &fromAddrLen);
+			int numBytes = recvfrom(s, buffer, MAX_BUFFER, 0, &fromAddr, &fromAddrLen);
 			if (numBytes < 0) {
 				std::cout << "Client: no connection" << std::endl;
 				return FAILURE;
@@ -36,40 +30,50 @@ int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 
 			// Assign new delegated server port.
 			std::cout << "Connection Established" << std::endl;
-			sockaddr_in sock;
-			memcpy(&sock, buffer, numBytes);
-			// addr = (struct sockaddr*) &sock;
-			// addrlen = sizeof(sock);
 			addr = new sockaddr(fromAddr);
 			addrlen = fromAddrLen;
+
+			//sockaddr sock;
+			//memcpy(&sock, buffer, numBytes);
+			//addr = new sockaddr(sock);
+			//addrlen = sizeof(sock);
+
+			/*sockaddr_in sock;
+			memcpy(&sock, buffer, numBytes);
+			addr = new sockaddr(*((struct sockaddr*) &sock));
+			addrlen = sizeof(sock);
+			 addr = new sockaddr(fromAddr);
+			 addrlen = fromAddrLen;*/
 			success = 1;
 		}
 	}
 	return SUCCESS;
 }
 
-SOCKET TCP::_accept(SOCKET s) {
+// Server accepting new clients.
+SOCKET TCP::_accept(SOCKET s, sockaddr* _addr, int* _addrlen) {
 	// Receive a connection from a new client.
 	sockaddr fromAddr;
 	int fromAddrLen = sizeof(fromAddr);
-	int numBytes = recvfrom(s, buffer, 0, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
+	int numBytes = recvfrom(s, NULL, 0, 0, (struct sockaddr*) &fromAddr, &fromAddrLen);
 
 	// Save client address.
+	*_addr = sockaddr(fromAddr);
+	*_addrlen = int(fromAddrLen);
 	addr = new sockaddr(fromAddr);
 	addrlen = fromAddrLen;
 
 	// Delegate the new client to a new server socket.
 	SOCKET client = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	sockaddr_in newSock;
+	memset(&newSock, 0, sizeof(newSock));
 	newSock.sin_addr.S_un.S_addr = INADDR_ANY;
-	newSock.sin_port = htons(initialPort);
 	newSock.sin_family = AF_INET;
-	/*while (bind(client, (struct sockaddr*)&newSock, sizeof(newSock)) == SOCKET_ERROR) {
-		newSock.sin_port = htons(initialPort++);
-	}*/
+	newSock.sin_port = htons(initialPort);
 
-	memcpy(buffer, &newSock, sizeof(sockaddr_in));
-	sendto(s, buffer, sizeof(sockaddr_in), 0, addr, addrlen);
+	while (bind(client, (struct sockaddr*) &newSock, sizeof(newSock)) == SOCKET_ERROR) {
+		newSock.sin_port = htons(initialPort++);
+	}
 	return client;
 }
 
@@ -109,14 +113,22 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 		size += packets[i].len;
 	}
 
-	// FSM of TCP congestion control;
+	// FSM of TCP congestion control (Badly written, state design pattern could used instead)
 	fd_set readfds;
 	struct timeval timeout;
 	timeout.tv_sec = TIMEOUT_S;
 	timeout.tv_usec = TIMEOUT_M;
 
-	int counter = 0;
+	states prevState = currentState;
 	while (localBase < lastPacketIndex) {
+		// Print current state
+		if (prevState != currentState) {
+			std::cout << std::string(30, '*') << std::endl;
+			std::cout << "Current State: " << sstates[currentState]<< std::endl;
+			std::cout << std::string(30, '*') << std::endl;
+			prevState = currentState;
+		}
+
 		FD_ZERO(&readfds);
 		FD_SET(s, &readfds);
 		// Timeout
@@ -250,10 +262,6 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 		}
 	}
 	return size;
-}
-
-int TCP::_listen() {
-	return 0;
 }
 
 int TCP::_recv(SOCKET s, char* buff, int len) {

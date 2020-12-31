@@ -18,7 +18,7 @@ int Client::init(TCP* tcp, const char* server, const char* serverPort) {
 	memset(&addrCriteria, 0, sizeof(addrCriteria));
 	addrCriteria.ai_family = AF_INET;				// Any address family
 	addrCriteria.ai_socktype = SOCK_DGRAM;			// Only datagram sockets
-	addrCriteria.ai_flags = AI_PASSIVE;				// Accept on any address/port
+	//addrCriteria.ai_flags = AI_PASSIVE;				// Accept on any address/port
 	addrCriteria.ai_protocol = IPPROTO_UDP;			// Only UDP protocol
 
 	int status;

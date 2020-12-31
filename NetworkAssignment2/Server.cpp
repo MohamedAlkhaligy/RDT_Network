@@ -1,7 +1,6 @@
 #include "server.h"
 
 #define RUNNING true
-#define SERVER_FOLDER "server\\"
 
 int Server::init(TCP* tcp, const char* server, const char* port) {
 
@@ -30,7 +29,7 @@ int Server::init(TCP* tcp, const char* server, const char* port) {
 
 	// Create a socket
 	mySocket = socket(servAddr->ai_family, servAddr->ai_socktype, servAddr->ai_protocol);
-	std::cout << "Socket: " << mySocket << std::endl;
+	std::cout << "Server Socket: " << mySocket << std::endl;
 	if (mySocket == INVALID_SOCKET) {
 		std::cerr << "Can't create socket, ERROR#" << WSAGetLastError() << std::endl;
 		WSACleanup();
@@ -64,39 +63,19 @@ int Server::run() {
 
 		TCP* tcp = new TCP();
 
-		// Initialize client's socket conneciton.
+		// Initialize server's socket.
 		if (init(tcp, SERVER.c_str(), port.c_str()) != SUCCESS) return FAILURE;
 
-
-
+		// Run the server.
 		while (RUNNING) {
-			SOCKET clientSocket = tcp->_accept(mySocket);
-			// int bytes = tcp->_recv(clientSocket, buffer, MAX_BUFFER);
-			// ***** Change socket
-			int bytes = tcp->_recv(mySocket, buffer, MAX_BUFFER);
-			std::string filename = std::string(buffer, bytes);
-			std::cout << filename << std::endl;
+			sockaddr addr;
+			int addrlen;
+			SOCKET clientSocket = tcp->_accept(mySocket, &addr, &addrlen);
 
-			FILE* fp = NULL;
-			std::string myPath = SERVER_FOLDER + filename;
-			if (!fopen_s(&fp, myPath.c_str(), "rb") && fp != NULL) {
-				while (!feof(fp)) {
-					int size = fread(buffer, 1, MAX_BUFFER, fp);
-					// **** Change socket
-					int numBytes = tcp->_send(mySocket, buffer, size);
-					if (numBytes < 0) {
-						break;
-					}
-				}
-				fclose(fp);
-				break;
-			}
-
-			//ClientsHandler* client = new ClientsHandler(clientSocket);
-			// clients.push_back(client);
+			// Delegate the new client to another server port.
+			ClientHandler* client = new ClientHandler(clientSocket, stoi(seed), 
+				stod(lossProbability), addr, addrlen);
 		}
-		// Send "\r\n\r\n" so that the client stops receiveing.
-		tcp->_send(mySocket, SEPARATOR.c_str(), SEPARATOR.size());
 
 	} catch (const std::ifstream::failure& e) {
 		std::cout << e.what() << std::endl;
