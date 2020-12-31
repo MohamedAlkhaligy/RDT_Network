@@ -169,8 +169,7 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 					break;
 				}
 				case CONGESTION_AVOIDANCE: {
-					counter++;
-					if (counter >= cwnd) {
+					if (counter == cwnd) {
 						cwnd++;
 						counter = 0;
 					} else {
@@ -246,14 +245,15 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 				}
 			}
 		}
-		out << base << " " << sstates[currentState] << " " << cwnd << " " << counter << std::endl;
+		out << cwnd << std::endl;
+		//out << base << " " << sstates[currentState] << " " << cwnd << " " << counter << std::endl;
 		// Print current state
-		if (prevState != currentState) {
+		/*if (prevState != currentState) {
 			std::cout << std::string(30, '*') << std::endl;
 			std::cout << "Current State: " << sstates[currentState] << std::endl;
 			std::cout << std::string(30, '*') << std::endl;
 			prevState = currentState;
-		}
+		}*/
 	}
 	return size;
 }

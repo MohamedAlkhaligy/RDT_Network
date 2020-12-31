@@ -5,10 +5,10 @@
 #include "Utilities.h"
 
 // Timeout in seconds
-static const double TIMEOUT_S = 1;
+static const double TIMEOUT_S = 0;
 
 // Timeout in milliseconds.
-static const double TIMEOUT_M = 0;
+static const double TIMEOUT_M = 700;
 
 static std::string WINDOW_FILE = "window.txt";
 
