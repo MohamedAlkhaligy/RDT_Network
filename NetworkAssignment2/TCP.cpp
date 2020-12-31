@@ -1,6 +1,5 @@
 #include "TCP.h"
 
-// Client connecting to server.
 int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 	// Two-way handshake.
 	sendto(s, NULL, 0, 0, servAddr, servAddrLen);
@@ -32,25 +31,12 @@ int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 			std::cout << "Connection Established" << std::endl;
 			addr = new sockaddr(fromAddr);
 			addrlen = fromAddrLen;
-
-			//sockaddr sock;
-			//memcpy(&sock, buffer, numBytes);
-			//addr = new sockaddr(sock);
-			//addrlen = sizeof(sock);
-
-			/*sockaddr_in sock;
-			memcpy(&sock, buffer, numBytes);
-			addr = new sockaddr(*((struct sockaddr*) &sock));
-			addrlen = sizeof(sock);
-			 addr = new sockaddr(fromAddr);
-			 addrlen = fromAddrLen;*/
 			success = 1;
 		}
 	}
 	return SUCCESS;
 }
 
-// Server accepting new clients.
 SOCKET TCP::_accept(SOCKET s, sockaddr* _addr, int* _addrlen) {
 	// Receive a connection from a new client.
 	sockaddr fromAddr;
@@ -78,7 +64,7 @@ SOCKET TCP::_accept(SOCKET s, sockaddr* _addr, int* _addrlen) {
 }
 
 
-int TCP::_send(SOCKET s, const char* data, int len) {
+int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int seed) {
 	
 	if (len / MAX_DGRAM_PAYLOAD > packets.size()) {
 		packets.resize(len / MAX_DGRAM_PAYLOAD + MARGIN);
@@ -89,6 +75,7 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	int localBase = 1;
 	int lastIndexSent = 1;
 	int size = 0;
+	srand(seed);
 
 	// Split data into packets
 	// Bonus: Edit checksum later.
@@ -108,8 +95,10 @@ int TCP::_send(SOCKET s, const char* data, int len) {
 	for (int i = localBase; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 		char t[MAX_BUFFER];
 		memcpy(t, &packets[i], DATA_PACKET_SIZE);
-		sendto(s, t, DATA_PACKET_SIZE, 0, addr, addrlen);
-		std::cout << "Sending: Packet " << packets[i].seqno << std::endl;
+		if (rand() % 100 > (int) (_lossProbability * 100)) {
+			sendto(s, t, DATA_PACKET_SIZE, 0, addr, addrlen);
+			std::cout << "Sending: Packet " << packets[i].seqno << std::endl;
+		}
 		size += packets[i].len;
 	}
 
@@ -274,7 +263,7 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 		if (pk.seqno == expectedseqnum) {
 			// Deliver data, and Send ack.
 			memcpy(buff, &pk.data, pk.len);
-			ack = { 0, 0, expectedseqnum, s };
+			ack = { 0, 0, expectedseqnum};
 			memcpy(buffer, &ack, ACK_PACKET_SIZE);
 			sendto(s, buffer, ACK_PACKET_SIZE, 0, addr, addrlen);
 			expectedseqnum++;

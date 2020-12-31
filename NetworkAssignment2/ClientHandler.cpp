@@ -13,7 +13,7 @@ void ClientHandler::processClient() {
 	if (!fopen_s(&fp, myPath.c_str(), "rb") && fp != NULL) {
 		while (!feof(fp)) {
 			int size = fread(buffer, 1, MAX_BUFFER, fp);
-			int numBytes = tcp->_send(clientSocket, buffer, size);
+			int numBytes = tcp->_send(clientSocket, buffer, size, lossProbability, seed);
 			if (numBytes < 0) {
 				break;
 			}
@@ -22,5 +22,5 @@ void ClientHandler::processClient() {
 	}
 
 	// Send "\r\n.\r\n" so that the client stops receiveing.
-	tcp->_send(clientSocket, SEPARATOR.c_str(), SEPARATOR.size());
+	tcp->_send(clientSocket, SEPARATOR.c_str(), SEPARATOR.size(), 0.0, 0);
 }

@@ -13,17 +13,17 @@
 #include <chrono>
 #include <thread>
 
-static const int MAX_BUFFER = 8192;
-static const int MAX_DGRAM_PAYLOAD = 512;
+static const int MAX_BUFFER = 16384;
 static const int INITIAL_THRESHOLD = 65536;
-static const int DATA_PACKET_SIZE = 524;
-static const int ACK_PACKET_SIZE = 12;
+static const int DATA_PACKET_SIZE = 1032;
+static const int MAX_DGRAM_PAYLOAD = 1024;
+static const int ACK_PACKET_SIZE = 8;
 static const int MAJOR = 2;
 static const int MINOR = 2;
 static const int SUCCESS = 0;
 static const int FAILURE = 1;
-static const int PACKETS = 512;
-static const int MARGIN = 512;
+static const int PACKETS = 256;
+static const int MARGIN = 256;
 static const std::string CLIENT_DEFAULT_PATH = "client.in";
 static const std::string SERVER_DEFAULT_PATH = "server.in";
 static const std::string SERVER = "localhost";
@@ -35,7 +35,6 @@ struct packet {
 	uint16_t checksum;
 	uint16_t len;
 	uint32_t seqno;
-	bool isFinal;
 
 	// Data (Payload)
 	char data[MAX_DGRAM_PAYLOAD];
@@ -46,7 +45,6 @@ struct ack_packet {
 	uint16_t checksum;
 	uint16_t len;
 	uint32_t ackno;
-	SOCKET _sock;
 };
 
 class Utilities

@@ -1,11 +1,15 @@
 #pragma once
 
-#include <vector>
+#include<cstdlib>
 
 #include "Utilities.h"
 
-static const double TIMEOUT_S = 90.0;
+// Timeout in seconds
+static const double TIMEOUT_S = 1;
+
+// Timeout in milliseconds.
 static const double TIMEOUT_M = 0;
+
 static const int TRIPLET = 3;
 
 class TCP
@@ -31,8 +35,6 @@ private:
 	int dupACKcount = 0;
 	int base = 1;
 	int lastPacketIndex = 1;
-	bool isConnectionEstablishedS = false;
-	bool isConnectionEstablishedR = false;
 	struct ack_packet ack = { 0, 0, 0 };
 	char buffer[MAX_BUFFER];
 
@@ -55,11 +57,9 @@ public:
 
 	SOCKET _accept(SOCKET s, sockaddr* _addr, int* _addrlen);
 
-	void setAddr(sockaddr _addr, int _addrlen);
-
 	int _connect(SOCKET s, const sockaddr* _addr, int _addrlen);
 
-	int _send(SOCKET s, const char* data, int len);
+	int _send(SOCKET s, const char* data, int len, double _lossProbability, int seed);
 
 	int _recv(SOCKET s, char* buffer, int len);
 

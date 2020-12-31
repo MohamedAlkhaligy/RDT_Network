@@ -71,7 +71,7 @@ int Client::execute() {
 		if (init(tcp, server.c_str(), serverPort.c_str()) != SUCCESS) return FAILURE;
 
 		// Send the requested filename to the server.
-		tcp->_send(socketToServer, filename.c_str(), filename.size());
+		tcp->_send(socketToServer, filename.c_str(), filename.size(), 0.0, 0);
 
 		// Receive the requested file from the server.
 		std::string clientpath = CLIENT_FOLDER + filename;
