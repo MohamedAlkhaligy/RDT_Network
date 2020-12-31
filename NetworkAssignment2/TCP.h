@@ -10,6 +10,8 @@ static const double TIMEOUT_S = 1;
 // Timeout in milliseconds.
 static const double TIMEOUT_M = 0;
 
+static std::string WINDOW_FILE = "window.txt";
+
 static const int TRIPLET = 3;
 
 class TCP

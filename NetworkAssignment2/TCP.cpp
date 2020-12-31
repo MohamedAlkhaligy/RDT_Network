@@ -108,26 +108,23 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 	timeout.tv_sec = TIMEOUT_S;
 	timeout.tv_usec = TIMEOUT_M;
 
+	// save sizes of congesiton window size for analysis.
+	std::ofstream out;
+	out.open(WINDOW_FILE, std::ios::out | std::ios::binary | std::ios_base::app);
+
 	states prevState = currentState;
 	while (localBase < lastPacketIndex) {
-		// Print current state
-		if (prevState != currentState) {
-			std::cout << std::string(30, '*') << std::endl;
-			std::cout << "Current State: " << sstates[currentState]<< std::endl;
-			std::cout << std::string(30, '*') << std::endl;
-			prevState = currentState;
-		}
-
 		FD_ZERO(&readfds);
 		FD_SET(s, &readfds);
 		// Timeout
 		if (select(s + 1, &readfds, NULL, NULL, &timeout) == 0) {
 			ssthread = cwnd / 2;
 			cwnd = 1;
+			counter = 0;
 			dupACKcount = 0;
 			// Retransmit missing segments (Go-Back-N)
 			std::cout << "Timeout have occured:" << std::endl;
-			for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++) {
+			for (int i = localBase; i <= localBase + cwnd - 1 && i < lastPacketIndex; i++) {
 				char c[DATA_PACKET_SIZE];
 				memcpy(c, &packets[i], DATA_PACKET_SIZE);
 				sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -173,7 +170,7 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 				}
 				case CONGESTION_AVOIDANCE: {
 					counter++;
-					if (counter == cwnd) {
+					if (counter >= cwnd) {
 						cwnd++;
 						counter = 0;
 					} else {
@@ -196,7 +193,7 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 				}
 			} 
 			// Duplicate ack
-			else if (temp.ackno < base) {
+			else if (temp.ackno != base) {
 				std::cout << "Dropping: Packet " << temp.ackno << std::endl;
 				switch (currentState) {
 				case SLOW_START: {
@@ -204,7 +201,7 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 					if (dupACKcount == TRIPLET) {
 						ssthread = cwnd / 2;
 						cwnd = ssthread + 3;
-						for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++) {
+						for (int i = localBase; i <= localBase + cwnd - 1 && i < lastPacketIndex; i++) {
 							char c[DATA_PACKET_SIZE];
 							memcpy(c, &packets[i], DATA_PACKET_SIZE);
 							sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -212,6 +209,7 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 							size += packets[i].len;
 							currentState = FAST_RECOVERY;
 							dupACKcount = 0;
+							counter = 0;
 						}
 					}
 					break;
@@ -221,21 +219,22 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 					if (dupACKcount == TRIPLET) {
 						ssthread = cwnd / 2;
 						cwnd = ssthread + 3;
-						for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++) {
+						for (int i = localBase; i <= localBase + cwnd - 1 && i < lastPacketIndex; i++) {
 							char c[DATA_PACKET_SIZE];
 							memcpy(c, &packets[i], DATA_PACKET_SIZE);
 							sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
 							std::cout << "Resending: Packet " << packets[i].seqno << std::endl;
 							size += packets[i].len;
-							currentState = FAST_RECOVERY;
-							dupACKcount = 0;
 						}
+						currentState = FAST_RECOVERY;
+						dupACKcount = 0;
+						counter = 0;
 					}
 					break;
 				} 
 				case FAST_RECOVERY: {
 					cwnd += 1;
-					for (int i = localBase; i <= localBase + cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
+					for (int i = lastIndexSent; i <= localBase + cwnd - 1 && i < lastPacketIndex; i++, lastIndexSent++) {
 						char c[DATA_PACKET_SIZE];
 						memcpy(c, &packets[i], DATA_PACKET_SIZE);
 						sendto(s, c, DATA_PACKET_SIZE, 0, addr, addrlen);
@@ -246,8 +245,14 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 				}
 				}
 			}
-
-			
+		}
+		out << base << " " << sstates[currentState] << " " << cwnd << " " << counter << std::endl;
+		// Print current state
+		if (prevState != currentState) {
+			std::cout << std::string(30, '*') << std::endl;
+			std::cout << "Current State: " << sstates[currentState] << std::endl;
+			std::cout << std::string(30, '*') << std::endl;
+			prevState = currentState;
 		}
 	}
 	return size;
@@ -259,8 +264,8 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 	while (true) {
 		numBytes = recvfrom(s, buffer, DATA_PACKET_SIZE, 0, NULL, NULL);
 		memcpy(&pk, buffer, numBytes);
-		std::cout << "Receivng: Packet " << pk.seqno << std::endl;
 		if (pk.seqno == expectedseqnum) {
+			std::cout << "Receivng: Packet " << pk.seqno << std::endl;
 			// Deliver data, and Send ack.
 			memcpy(buff, &pk.data, pk.len);
 			ack = { 0, 0, expectedseqnum};
@@ -272,7 +277,7 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 		} else {
 			// Send duplicate ack.
 			memcpy(buffer, &ack, ACK_PACKET_SIZE);
-			sendto(s, buffer, MAX_BUFFER, 0, addr, addrlen);
+			sendto(s, buffer, ACK_PACKET_SIZE, 0, addr, addrlen);
 		}
 	}
 	return (int)pk.len;

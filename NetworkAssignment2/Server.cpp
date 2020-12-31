@@ -80,4 +80,6 @@ int Server::run() {
 	} catch (const std::ifstream::failure& e) {
 		std::cout << e.what() << std::endl;
 	}
+
+	return SUCCESS;
 }

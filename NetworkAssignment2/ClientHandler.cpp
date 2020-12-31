@@ -4,6 +4,10 @@
 
 void ClientHandler::processClient() {
 
+	// Clear window file.
+	std::ofstream out(WINDOW_FILE, std::ios::out | std::ios::trunc);
+	out.close();
+
 	int bytes = tcp->_recv(clientSocket, buffer, MAX_BUFFER);
 	std::string filename = std::string(buffer, bytes);
 	std::cout << filename << std::endl;
