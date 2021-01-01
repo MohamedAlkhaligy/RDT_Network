@@ -50,13 +50,14 @@ int Server::run() {
 	// Note: No error checking is done.
 	try {
 		std::ifstream clientFile(SERVER_DEFAULT_PATH);
-		std::string port, seed, lossProbability;
+		std::string port, seed, lossProbability, corruptionProbability;
 		getline(clientFile, port);
 		getline(clientFile, seed);
 		getline(clientFile, lossProbability);
+		getline(clientFile, corruptionProbability);
 
 		// Check if all arguments needed exist.
-		if (port.empty() || seed.empty() || lossProbability.empty()) {
+		if (port.empty() || seed.empty() || lossProbability.empty() || corruptionProbability.empty()) {
 			std::cout << "server.in: information(s) is(are) missing." << std::endl;
 			return FAILURE;
 		}
@@ -74,7 +75,7 @@ int Server::run() {
 
 			// Delegate the new client to another server port.
 			ClientHandler* client = new ClientHandler(clientSocket, stoi(seed), 
-				stod(lossProbability), addr, addrlen);
+				stod(lossProbability), stod(corruptionProbability), addr, addrlen);
 		}
 
 	} catch (const std::ifstream::failure& e) {

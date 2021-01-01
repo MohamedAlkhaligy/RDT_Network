@@ -1,5 +1,7 @@
 #include "TCP.h"
 
+#define CORRUPT_AT 0
+
 int TCP::_connect(SOCKET s, const sockaddr* servAddr, int servAddrLen) {
 	// Two-way handshake.
 	sendto(s, NULL, 0, 0, servAddr, servAddrLen);
@@ -63,8 +65,15 @@ SOCKET TCP::_accept(SOCKET s, sockaddr* _addr, int* _addrlen) {
 	return client;
 }
 
+uint16_t TCP::getChecksum(unsigned char* packet, int size) {
+	uint16_t checksum = 0;
+	for (int i = 0; i < size; i++) {
+		checksum = checksum ^ packet[i];
+	}
+	return checksum;
+}
 
-int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int seed) {
+int TCP::_send(SOCKET s, const char* data, int len, int seed, double _lossProbability, double _corruptionProbability) {
 	
 	if (len / MAX_DGRAM_PAYLOAD > packets.size()) {
 		packets.resize(len / MAX_DGRAM_PAYLOAD + MARGIN);
@@ -84,6 +93,7 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 		struct packet pk;
 		pk = { 0, (uint16_t) min(MAX_DGRAM_PAYLOAD, len), nextseqnum, false};
 		memcpy(pk.data, data + index, min(MAX_DGRAM_PAYLOAD, len));
+		pk.checksum = ~getChecksum((unsigned char*) &pk, DATA_PACKET_SIZE);
 		packets[lastPacketIndex] = pk;
 		lastPacketIndex++;
 		nextseqnum++;
@@ -95,6 +105,11 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 	for (int i = localBase; i <= cwnd && i < lastPacketIndex; i++, lastIndexSent++) {
 		char t[MAX_BUFFER];
 		memcpy(t, &packets[i], DATA_PACKET_SIZE);
+		if (rand() % 100 <= (int) (_corruptionProbability * 100)) {
+			unsigned char* p = (unsigned char*) &packets[i];
+			t[CORRUPT_AT]++;
+			std::cout << "Corrupting and sending: Packet " << packets[i].seqno << std::endl;
+		}
 		if (rand() % 100 > (int) (_lossProbability * 100)) {
 			sendto(s, t, DATA_PACKET_SIZE, 0, addr, addrlen);
 			std::cout << "Sending: Packet " << packets[i].seqno << std::endl;
@@ -256,7 +271,7 @@ int TCP::_recv(SOCKET s, char* buff, int len) {
 	while (true) {
 		numBytes = recvfrom(s, buffer, DATA_PACKET_SIZE, 0, NULL, NULL);
 		memcpy(&pk, buffer, numBytes);
-		if (pk.seqno == expectedseqnum) {
+		if (pk.seqno == expectedseqnum && getChecksum((unsigned char*)&pk, DATA_PACKET_SIZE) == 0) {
 			std::cout << "Receivng: Packet " << pk.seqno << std::endl;
 			// Deliver data, and Send ack.
 			memcpy(buff, &pk.data, pk.len);

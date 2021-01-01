@@ -5,10 +5,10 @@
 #include "Utilities.h"
 
 // Timeout in seconds
-static const double TIMEOUT_S = 0;
+static const double TIMEOUT_S = 1;
 
 // Timeout in milliseconds.
-static const double TIMEOUT_M = 700;
+static const double TIMEOUT_M = 0;
 
 static std::string WINDOW_FILE = "window.txt";
 
@@ -64,12 +64,14 @@ public:
 	int _connect(SOCKET s, const sockaddr* _addr, int _addrlen);
 
 	// Send data.
-	int _send(SOCKET s, const char* data, int len, double _lossProbability, int seed);
+	int _send(SOCKET s, const char* data, int len, int seed, double _lossProbability, double _corruptionProbability);
 
 	// Receive data .
 	int _recv(SOCKET s, char* buffer, int len);
 
 	// Close TCP connection.
 	void _closesocket(SOCKET s);
+
+	uint16_t getChecksum(unsigned char* packet, int size);
 };
 
