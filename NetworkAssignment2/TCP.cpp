@@ -246,14 +246,6 @@ int TCP::_send(SOCKET s, const char* data, int len, double _lossProbability, int
 			}
 		}
 		out << cwnd << std::endl;
-		//out << base << " " << sstates[currentState] << " " << cwnd << " " << counter << std::endl;
-		// Print current state
-		/*if (prevState != currentState) {
-			std::cout << std::string(30, '*') << std::endl;
-			std::cout << "Current State: " << sstates[currentState] << std::endl;
-			std::cout << std::string(30, '*') << std::endl;
-			prevState = currentState;
-		}*/
 	}
 	return size;
 }

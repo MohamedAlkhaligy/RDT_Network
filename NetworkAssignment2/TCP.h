@@ -57,12 +57,16 @@ public:
 		addrlen = int(_addrlen);
 	}
 
+	// Accept new connections
 	SOCKET _accept(SOCKET s, sockaddr* _addr, int* _addrlen);
 
+	// Connect to server.
 	int _connect(SOCKET s, const sockaddr* _addr, int _addrlen);
 
+	// Send data.
 	int _send(SOCKET s, const char* data, int len, double _lossProbability, int seed);
 
+	// Receive data .
 	int _recv(SOCKET s, char* buffer, int len);
 
 	// Close TCP connection.
